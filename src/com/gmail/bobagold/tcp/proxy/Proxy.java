@@ -6,13 +6,10 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
-import java.nio.charset.Charset;
-import java.nio.charset.CharsetDecoder;
 import java.util.LinkedList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -25,8 +22,6 @@ public class Proxy extends Thread {
     private volatile boolean shutdown = false;
     private Selector selector;
     private LinkedList opened_sockets = new LinkedList();
-    private static Charset charset = Charset.forName("US-ASCII");
-    private static CharsetDecoder decoder = charset.newDecoder();
 
     public Proxy() throws IOException {
         selector = Selector.open();
@@ -132,21 +127,11 @@ public class Proxy extends Thread {
     private void accept(ServerChannel sc) throws IOException {
         SocketChannel accepted = sc.ssc.accept();
         accepted.configureBlocking(false);
-        accepted.register(selector, SelectionKey.OP_READ, new ClientChannel(accepted, sc.port));
         System.out.println("Accepted");
+        connectRemote(new ClientChannel(accepted, sc.port));
     }
 
-    private void readClient(ClientChannel clientChannel) throws IOException {
-        ByteBuffer dbuf = ByteBuffer.allocateDirect(1024);
-        dbuf.clear();
-        clientChannel.sc.read(dbuf);
-        dbuf.flip();
-        System.out.print("Received " + decoder.decode(dbuf));
-        clientChannel.sc.keyFor(selector).cancel();
-        connectRemote(clientChannel, dbuf);
-    }
-
-    private void connectRemote(ClientChannel clientChannel, ByteBuffer dbuf) throws UnknownHostException, IOException {
+    private void connectRemote(ClientChannel clientChannel) throws UnknownHostException, IOException {
         RemoteSettings rs = getRemoteSettings(clientChannel.port);
 	InetSocketAddress isa
 	    = new InetSocketAddress(InetAddress.getByName(rs.host), rs.port);
@@ -154,47 +139,52 @@ public class Proxy extends Thread {
         sc = SocketChannel.open();
         sc.configureBlocking(false);
         sc.connect(isa);
-        sc.register(selector, SelectionKey.OP_CONNECT, new RemoteChannel(clientChannel, sc, dbuf));
+        sc.register(selector, SelectionKey.OP_CONNECT, new RemoteChannel(clientChannel, sc));
         System.out.println("Connect remote");
     }
 
     private void connectedRemote(RemoteChannel remoteChannel) throws IOException {
         remoteChannel.sc.finishConnect();
-        remoteChannel.sc.register(selector, SelectionKey.OP_WRITE, remoteChannel);
-        remoteChannel.to_write.flip();
+        remoteChannel.sc.register(selector, SelectionKey.OP_READ, remoteChannel);
+        remoteChannel.clientChannel.sc.register(selector, SelectionKey.OP_READ, remoteChannel.clientChannel);
         System.out.println("Connected remote");
     }
 
+    private void readClient(ClientChannel clientChannel) throws IOException {
+        int read = clientChannel.sc.read(clientChannel.client_to_remote);
+        System.out.println("Received client " + read + " bytes");
+        clientChannel.client_to_remote.flip();
+        clientChannel.sc.register(selector, 0, clientChannel);
+        clientChannel.remoteChannel.sc.register(selector, SelectionKey.OP_READ | SelectionKey.OP_WRITE, clientChannel.remoteChannel);
+    }
+
     private void writeRemote(RemoteChannel remoteChannel) throws IOException {
-        int written = remoteChannel.sc.write(remoteChannel.to_write);
-        if (!remoteChannel.to_write.hasRemaining())
+        int written = remoteChannel.sc.write(remoteChannel.clientChannel.client_to_remote);
+        if (!remoteChannel.clientChannel.client_to_remote.hasRemaining()) {
+            remoteChannel.clientChannel.client_to_remote.clear();
             remoteChannel.sc.register(selector, SelectionKey.OP_READ, remoteChannel);
+            remoteChannel.clientChannel.sc.register(selector, SelectionKey.OP_READ, remoteChannel.clientChannel);
+        }
         System.out.println("Written remote " + written + " bytes");
     }
 
     private void readRemote(RemoteChannel remoteChannel) throws IOException {
-        ByteBuffer dbuf = ByteBuffer.allocateDirect(10240);
-        dbuf.clear();
-        int read = remoteChannel.sc.read(dbuf);
-        dbuf.flip();
-        System.out.print("Received from remote " + read + " bytes");
-//        if (dbuf.)
-        remoteChannel.sc.close();
-        remoteChannel.clientChannel.remote_done = true;
-        remoteChannel.clientChannel.to_write = dbuf;
-        remoteChannel.clientChannel.sc.register(selector, SelectionKey.OP_WRITE, remoteChannel.clientChannel);
+        int start = remoteChannel.remote_to_client.position();
+        int read = remoteChannel.sc.read(remoteChannel.remote_to_client);
+        System.out.println("Received remote " + read + " bytes");
+        remoteChannel.remote_to_client.flip();
+        remoteChannel.sc.register(selector, 0, remoteChannel);
+        remoteChannel.clientChannel.sc.register(selector, SelectionKey.OP_READ | SelectionKey.OP_WRITE, remoteChannel.clientChannel);
     }
 
     private void writeClient(ClientChannel clientChannel) throws IOException {
-        int written = clientChannel.sc.write(clientChannel.to_write);
-        if (!clientChannel.to_write.hasRemaining())
-        {
-            if (clientChannel.remote_done)
-                clientChannel.sc.close();
-            else
-                ;//TODO allow remote to read further
+        int written = clientChannel.sc.write(clientChannel.remoteChannel.remote_to_client);
+        if (!clientChannel.remoteChannel.remote_to_client.hasRemaining()) {
+            clientChannel.remoteChannel.remote_to_client.clear();
+            clientChannel.sc.register(selector, SelectionKey.OP_READ, clientChannel);
+            clientChannel.remoteChannel.sc.register(selector, SelectionKey.OP_READ, clientChannel.remoteChannel);
         }
-        System.out.println("Written client" + written + " bytes");
+        System.out.println("Written client " + written + " bytes");
     }
 
     private static class ServerChannel {
@@ -208,10 +198,22 @@ public class Proxy extends Thread {
     private static class ClientChannel {
         private SocketChannel sc;
         private int port;
-        private ByteBuffer to_write;
-        private boolean remote_done = false;
+        private ByteBuffer client_to_remote;
+        private RemoteChannel remoteChannel;
         public ClientChannel(SocketChannel sc, int port) {
-            this.sc = sc; this.port = port;
+            this.sc = sc; this.port = port; this.client_to_remote = ByteBuffer.allocateDirect(1024);
+        }
+    }
+
+    private static class RemoteChannel {
+        private ClientChannel clientChannel;
+        private SocketChannel sc;
+        private ByteBuffer remote_to_client;
+        public RemoteChannel(ClientChannel clientChannel, SocketChannel sc) {
+            this.clientChannel = clientChannel;
+            this.sc = sc;
+            remote_to_client = ByteBuffer.allocateDirect(10240);
+            clientChannel.remoteChannel = this;
         }
     }
 
@@ -220,17 +222,6 @@ public class Proxy extends Thread {
         private int port;
         public RemoteSettings(String host, int port) {
             this.host = host; this.port = port;
-        }
-    }
-
-    private static class RemoteChannel {
-        private ClientChannel clientChannel;
-        private SocketChannel sc;
-        private ByteBuffer to_write;
-        public RemoteChannel(ClientChannel clientChannel, SocketChannel sc, ByteBuffer to_write) {
-            this.clientChannel = clientChannel;
-            this.sc = sc;
-            this.to_write = to_write;
         }
     }
 }
