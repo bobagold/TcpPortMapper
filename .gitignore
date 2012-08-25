@@ -1,1 +1,4 @@
 build/
+src/com/gmail/bobagold/tcp/proxy/Ping.java
+src/com/gmail/bobagold/tcp/proxy/TimeQuery.java
+src/com/gmail/bobagold/tcp/proxy/TimeServer.java
