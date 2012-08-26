@@ -15,12 +15,12 @@ import java.util.logging.Logger;
  * @author vgold
  */
 public class TcpPortMapper {
+    private static Proxy proxy;
 
     /**
      * @param args the command line arguments
      */
     public static void main(String[] args) throws InterruptedException {
-        Proxy proxy;
         try {
             proxy = new Proxy();
             proxy.listen(8080, InetAddress.getByName("localhost"));
@@ -29,6 +29,17 @@ public class TcpPortMapper {
             System.err.println("Can't create proxy");
             return;
         }
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            @Override
+            public void run() {
+                proxy.shutdown();
+                try {
+                    proxy.join();
+                } catch (InterruptedException ex) {
+                    Logger.getLogger(TcpPortMapper.class.getName()).log(Level.SEVERE, null, ex);
+                }
+            }
+        });
         proxy.start();
         Thread.sleep(5000);
         proxy.shutdown();
