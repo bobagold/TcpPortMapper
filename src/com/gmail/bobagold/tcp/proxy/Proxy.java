@@ -49,14 +49,16 @@ public class Proxy extends Thread {
 
     private void listen(int port) throws IOException {
 	ServerSocketChannel ssc = ServerSocketChannel.open();
+        final InetAddress localHost = InetAddress.getByName("localhost");//InetAddress.getLocalHost();
 	InetSocketAddress isa
-	    = new InetSocketAddress(InetAddress.getLocalHost(), port);
+	    = new InetSocketAddress(localHost, port);
 	ssc.socket().bind(isa);
         ssc.configureBlocking(false);
         ssc.register(selector, SelectionKey.OP_ACCEPT, new ServerChannel(ssc, port));
         synchronized (opened_sockets) {
             opened_sockets.add(ssc.socket());
         }
+        System.out.println("Accepting connections on " + localHost + ":" + port);
     }
 
     public void shutdown() {
