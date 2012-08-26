@@ -29,21 +29,23 @@ public class TcpPortMapper {
             System.err.println("Can't create proxy");
             return;
         }
-        Runtime.getRuntime().addShutdownHook(new Thread() {
-            @Override
-            public void run() {
-                proxy.shutdown();
-                try {
-                    proxy.join();
-                } catch (InterruptedException ex) {
-                    Logger.getLogger(TcpPortMapper.class.getName()).log(Level.SEVERE, null, ex);
-                }
-            }
-        });
+        Runtime.getRuntime().addShutdownHook(new ShutdownHook());
         proxy.start();
         Thread.sleep(5000);
         proxy.shutdown();
         proxy.join();
         System.out.println("Done");
+    }
+
+    private static class ShutdownHook extends Thread {
+        @Override
+        public void run() {
+            proxy.shutdown();
+            try {
+                proxy.join();
+            } catch (InterruptedException ex) {
+                Logger.getLogger(TcpPortMapper.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
     }
 }
