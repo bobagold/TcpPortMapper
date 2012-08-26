@@ -31,7 +31,6 @@ public class Proxy extends Thread {
     @Override
     public void run() {
         try {
-            listen(8080);//TODO move it to caller
             for (;;) {
                 int selected_count = selector.select();
                 System.out.println("selector worked");
@@ -49,9 +48,11 @@ public class Proxy extends Thread {
         System.out.println("Ok");
     }
 
-    private void listen(int port) throws IOException {
+    public void listen(int port) throws IOException {
+        listen(port, InetAddress.getLocalHost());
+    }
+    public void listen(int port, final InetAddress localHost) throws IOException {
 	ServerSocketChannel ssc = ServerSocketChannel.open();
-        final InetAddress localHost = InetAddress.getByName("localhost");//InetAddress.getLocalHost();
 	InetSocketAddress isa
 	    = new InetSocketAddress(localHost, port);
 	ssc.socket().bind(isa);
