@@ -53,6 +53,8 @@ public class Proxy extends Thread {
         listen(port, InetAddress.getLocalHost());
     }
     public void listen(int port, final InetAddress localHost) throws IOException {
+        if (null == getRemoteSettings(port))
+            throw new IllegalArgumentException("port is not in mapping");
 	ServerSocketChannel ssc = ServerSocketChannel.open();
 	InetSocketAddress isa
 	    = new InetSocketAddress(localHost, port);
