@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
@@ -68,11 +69,16 @@ public class Proxy extends Thread {
 
     private void closeSockets() throws IOException {
         synchronized (opened_sockets) {
+            int closed = 0;
             while (opened_sockets.size() > 0) {
                 Object socket = opened_sockets.removeLast();
                 if (socket instanceof ServerSocket)
                     ((ServerSocket)socket).close();
+                else if (socket instanceof Socket)
+                    ((Socket)socket).close();
+                closed++;
             }
+            System.out.println("Closed sockets: " + closed);
         }
     }
 
@@ -129,6 +135,9 @@ public class Proxy extends Thread {
     private void accept(ServerChannel sc) throws IOException {
         SocketChannel accepted = sc.ssc.accept();
         accepted.configureBlocking(false);
+        synchronized (opened_sockets) {
+            opened_sockets.add(accepted.socket());
+        }
         System.out.println("Accepted");
         connectRemote(new ClientChannel(accepted, sc.port));
     }
@@ -149,6 +158,9 @@ public class Proxy extends Thread {
         remoteChannel.sc.finishConnect();
         remoteChannel.sc.register(selector, SelectionKey.OP_READ, remoteChannel);
         remoteChannel.clientChannel.sc.register(selector, SelectionKey.OP_READ, remoteChannel.clientChannel);
+        synchronized (opened_sockets) {
+            opened_sockets.add(remoteChannel.sc.socket());
+        }
         System.out.println("Connected remote");
     }
 
@@ -203,6 +215,10 @@ public class Proxy extends Thread {
         clientChannel.remoteChannel = null;
         remoteChannel.clientChannel = null;
         remoteChannel.sc.close();
+        synchronized (opened_sockets) {
+            opened_sockets.remove(clientChannel.sc.socket());
+            opened_sockets.remove(remoteChannel.sc.socket());
+        }
         System.out.println("Closed client");
     }
 
@@ -212,6 +228,10 @@ public class Proxy extends Thread {
         remoteChannel.clientChannel = null;
         clientChannel.remoteChannel = null;
         clientChannel.sc.close();
+        synchronized (opened_sockets) {
+            opened_sockets.remove(clientChannel.sc.socket());
+            opened_sockets.remove(remoteChannel.sc.socket());
+        }
         System.out.println("Closed remote");
     }
 
