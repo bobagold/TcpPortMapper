@@ -134,8 +134,16 @@ public class Proxy extends Thread {
 
     private void connectRemote(ClientChannel clientChannel) throws UnknownHostException, IOException {
         RemoteSettings rs = getRemoteSettings(clientChannel.port);
-	InetSocketAddress isa
-	    = new InetSocketAddress(InetAddress.getByName(rs.host), rs.port);
+	InetSocketAddress isa;
+        try {
+            isa = new InetSocketAddress(InetAddress.getByName(rs.host), rs.port);
+        } catch (UnknownHostException e) {
+            closeClient(clientChannel);
+            return;
+        } catch (IllegalArgumentException e) {
+            closeClient(clientChannel);
+            return;
+        }
 	SocketChannel sc = null;
         sc = SocketChannel.open();
         sc.configureBlocking(false);
@@ -228,6 +236,13 @@ public class Proxy extends Thread {
             opened_sockets.remove(remoteChannel.sc.socket());
         }
         System.out.println("Closed remote");
+    }
+
+    private void closeClient(ClientChannel clientChannel) throws IOException {
+        clientChannel.sc.close();
+        synchronized (opened_sockets) {
+            opened_sockets.remove(clientChannel.sc.socket());
+        }
     }
 
     private static class ServerChannel {
