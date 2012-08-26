@@ -12,6 +12,7 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -112,7 +113,11 @@ public class Proxy extends Thread {
     }
 
     private RemoteSettings getRemoteSettings(int port) {
-        return new RemoteSettings("localhost", 80);
+        return remote_settings.get(Integer.valueOf(port));
+    }
+    private HashMap<Integer, RemoteSettings> remote_settings = new HashMap<Integer, RemoteSettings>();
+    public void putRemoteSettings(int port_from, String host_to, int port_to) {
+        remote_settings.put(Integer.valueOf(port_from), new RemoteSettings(host_to, port_to));
     }
 
     private void accept(ServerChannel sc) throws IOException {

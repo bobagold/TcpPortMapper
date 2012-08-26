@@ -23,6 +23,7 @@ public class TcpPortMapper {
     public static void main(String[] args) throws InterruptedException {
         try {
             proxy = new Proxy();
+            proxy.putRemoteSettings(8080, "localhost", 80);
             proxy.listen(8080, InetAddress.getByName("localhost"));
         } catch (IOException ex) {
             Logger.getLogger(TcpPortMapper.class.getName()).log(Level.SEVERE, null, ex);
