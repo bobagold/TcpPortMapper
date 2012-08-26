@@ -1,6 +1,7 @@
 package com.gmail.bobagold.tcp.proxy;
 
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
@@ -85,44 +86,25 @@ public class Proxy extends Thread {
     private void processSelectedKeys() {
         for (SelectionKey i: selector.selectedKeys()) {
             Object attachment = i.attachment();
-            if (attachment instanceof ServerChannel && i.isAcceptable()) {
-                try {
-                    accept((ServerChannel) attachment);
-                } catch (IOException ex) {
-                    Logger.getLogger(Proxy.class.getName()).log(Level.SEVERE, null, ex);
+            try {
+                if (attachment instanceof ServerChannel && i.isAcceptable()) {
+                        accept((ServerChannel) attachment);
+                } else if (attachment instanceof ClientChannel && i.isReadable()) {
+                        readClient((ClientChannel) attachment);
+                } else if (attachment instanceof RemoteChannel && i.isConnectable()) {
+                        connectedRemote((RemoteChannel) attachment);
+                } else if (attachment instanceof RemoteChannel && i.isWritable()) {
+                        writeRemote((RemoteChannel) attachment);
+                } else if (attachment instanceof RemoteChannel && i.isReadable()) {
+                        readRemote((RemoteChannel) attachment);
+                } else if (attachment instanceof ClientChannel && i.isWritable()) {
+                        writeClient((ClientChannel) attachment);
+                } else {
+                    System.err.println("unknown action");
                 }
-            } else if (attachment instanceof ClientChannel && i.isReadable()) {
-                try {
-                    readClient((ClientChannel) attachment);
-                } catch (IOException ex) {
-                    Logger.getLogger(Proxy.class.getName()).log(Level.SEVERE, null, ex);
-                }
-            } else if (attachment instanceof RemoteChannel && i.isConnectable()) {
-                try {
-                    connectedRemote((RemoteChannel) attachment);
-                } catch (IOException ex) {
-                    Logger.getLogger(Proxy.class.getName()).log(Level.SEVERE, null, ex);
-                }
-            } else if (attachment instanceof RemoteChannel && i.isWritable()) {
-                try {
-                    writeRemote((RemoteChannel) attachment);
-                } catch (IOException ex) {
-                    Logger.getLogger(Proxy.class.getName()).log(Level.SEVERE, null, ex);
-                }
-            } else if (attachment instanceof RemoteChannel && i.isReadable()) {
-                try {
-                    readRemote((RemoteChannel) attachment);
-                } catch (IOException ex) {
-                    Logger.getLogger(Proxy.class.getName()).log(Level.SEVERE, null, ex);
-                }
-            } else if (attachment instanceof ClientChannel && i.isWritable()) {
-                try {
-                    writeClient((ClientChannel) attachment);
-                } catch (IOException ex) {
-                    Logger.getLogger(Proxy.class.getName()).log(Level.SEVERE, null, ex);
-                }
-            } else {
-                System.err.println("unknown action");
+            } catch (IOException ex) {
+                ex.printStackTrace();
+                Logger.getLogger(Proxy.class.getName()).log(Level.SEVERE, null, ex);
             }
         }
         selector.selectedKeys().clear();
@@ -155,7 +137,12 @@ public class Proxy extends Thread {
     }
 
     private void connectedRemote(RemoteChannel remoteChannel) throws IOException {
-        remoteChannel.sc.finishConnect();
+        try {
+            remoteChannel.sc.finishConnect();
+        } catch (ConnectException ce) {
+            closedRemote(remoteChannel);
+            return;
+        }
         remoteChannel.sc.register(selector, SelectionKey.OP_READ, remoteChannel);
         remoteChannel.clientChannel.sc.register(selector, SelectionKey.OP_READ, remoteChannel.clientChannel);
         synchronized (opened_sockets) {
