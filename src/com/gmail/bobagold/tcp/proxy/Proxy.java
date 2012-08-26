@@ -154,6 +154,10 @@ public class Proxy extends Thread {
 
     private void readClient(ClientChannel clientChannel) throws IOException {
         int read = clientChannel.sc.read(clientChannel.client_to_remote);
+        if (read == -1) {
+            closedClient(clientChannel);
+            return;
+        }
         System.out.println("Received client " + read + " bytes");
         clientChannel.client_to_remote.flip();
         clientChannel.sc.register(selector, 0, clientChannel);
@@ -173,6 +177,10 @@ public class Proxy extends Thread {
     private void readRemote(RemoteChannel remoteChannel) throws IOException {
         int start = remoteChannel.remote_to_client.position();
         int read = remoteChannel.sc.read(remoteChannel.remote_to_client);
+        if (read == -1) {
+            closedRemote(remoteChannel);
+            return;
+        }
         System.out.println("Received remote " + read + " bytes");
         remoteChannel.remote_to_client.flip();
         remoteChannel.sc.register(selector, 0, remoteChannel);
@@ -187,6 +195,24 @@ public class Proxy extends Thread {
             clientChannel.remoteChannel.sc.register(selector, SelectionKey.OP_READ, clientChannel.remoteChannel);
         }
         System.out.println("Written client " + written + " bytes");
+    }
+
+    private void closedClient(ClientChannel clientChannel) throws IOException {
+        clientChannel.sc.close();
+        RemoteChannel remoteChannel = clientChannel.remoteChannel;
+        clientChannel.remoteChannel = null;
+        remoteChannel.clientChannel = null;
+        remoteChannel.sc.close();
+        System.out.println("Closed client");
+    }
+
+    private void closedRemote(RemoteChannel remoteChannel) throws IOException {
+        remoteChannel.sc.close();
+        ClientChannel clientChannel = remoteChannel.clientChannel;
+        remoteChannel.clientChannel = null;
+        clientChannel.remoteChannel = null;
+        clientChannel.sc.close();
+        System.out.println("Closed remote");
     }
 
     private static class ServerChannel {
